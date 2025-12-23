@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loyalty MVP</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- QRCode.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Html5-QRCode Scanner -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- Alpine.js CON DEFER -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+
+    <style>
+        [x-cloak] { display: none !important; }
+        .stamp-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+        .stamp { aspect-ratio: 1; border-radius: 50%; border: 2px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; }
+        .stamp.filled { background-color: #10b981; border: 2px solid #059669; color: white; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <!-- App Container -->
+    <div x-data="app()" x-cloak>
+        
+        <!-- NAVBAR -->
+        <nav class="bg-indigo-600 text-white p-4 shadow-md">
+            <div class="container mx-auto flex justify-between items-center">
+                <h1 class="text-xl font-bold">Loyalty<span class="text-indigo-200">App</span></h1>
+                <!-- Botón de Reset siempre visible si hay token, por seguridad -->
+                <button x-show="token" @click="logout" class="text-sm bg-indigo-800 px-3 py-1 rounded hover:bg-indigo-900 border border-indigo-500">
+                    Salir / Reiniciar
+                </button>
+            </div>
+        </nav>
+
+        <!-- MAIN CONTAINER -->
+        <main class="container mx-auto p-4 max-w-md">
+
+            <!-- HTTPS WARNING -->
+            <div id="https-warning" class="hidden bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4" role="alert">
+                <p class="font-bold">Atención</p>
+                <p class="text-sm">Para usar la cámara en el móvil, usa una conexión segura (HTTPS) o `localhost`. Si estás probando con IP (192.168...), la cámara podría bloquearse.</p>
+            </div>
+
+            <!-- ERROR ALERT -->
+            <div x-show="globalError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                <strong class="font-bold">Error:</strong>
+                <span class="block sm:inline" x-text="globalError"></span>
+                <button @click="logout" class="block mt-2 text-sm underline font-bold">Reiniciar Aplicación</button>
+            </div>
+
+            <!-- VIEW: LOADING STATE (Visible solo cuando hay token pero no rol, o cargando) -->
+            <div x-show="token && !userData.email && !globalError" class="text-center py-10">
+                <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+                <p class="text-gray-500">Recuperando sesión...</p>
+                <button @click="logout" class="text-indigo-500 text-sm underline mt-4">¿Tarda mucho? Haz clic aquí</button>
+            </div>
+
+            <!-- VIEW: AUTH (Login/Registro) -->
+            <div x-show="!token">
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <div class="flex justify-center mb-6 space-x-4">
+                        <button @click="authMode = 'login'" :class="authMode === 'login' ? 'text-indigo-600 font-bold border-b-2 border-indigo-600' : 'text-gray-500'">Ingresar</button>
+                        <button @click="authMode = 'register'" :class="authMode === 'register' ? 'text-indigo-600 font-bold border-b-2 border-indigo-600' : 'text-gray-500'">Registrarse</button>
+                    </div>
+
+                    <form @submit.prevent="submitAuth">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">Email</label>
+                            <input type="email" x-model="authForm.username" class="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">Contraseña</label>
+                            <input type="password" x-model="authForm.password" class="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                        </div>
+
+                        <div x-show="authMode === 'register'">
+                             <div class="mb-4">
+                                <label class="block text-sm font-medium mb-1">Soy...</label>
+                                <select x-model="authForm.role" class="w-full p-2 border rounded">
+                                    <option value="customer">Cliente</option>
+                                    <option value="merchant">Comercio</option>
+                                </select>
+                            </div>
+                            <div x-show="authForm.role === 'merchant'" class="mb-4">
+                                <label class="block text-sm font-medium mb-1">Nombre del Comercio</label>
+                                <input type="text" x-model="authForm.business_name" class="w-full p-2 border rounded">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 transition">
+                            <span x-text="authMode === 'login' ? 'Entrar' : 'Crear Cuenta'"></span>
+                        </button>
+                    </form>
+                    <p x-text="message" class="mt-4 text-center text-red-500 text-sm"></p>
+                </div>
+            </div>
+
+            <!-- VIEW: CUSTOMER -->
+            <div x-show="token && userRole === 'customer'">
+                <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                    <h2 class="text-2xl font-bold mb-2">Mi Tarjeta</h2>
+                    <p class="text-gray-500 mb-6" x-text="userData.email"></p>
+
+                    <div class="flex flex-col items-center justify-center bg-gray-100 p-4 rounded-lg mb-6">
+                        <div id="qrcode" class="bg-white p-2 min-h-[180px]"></div>
+                        <p class="text-xs text-gray-400 mt-2">Expira en <span x-text="qrTimer"></span>s</p>
+                    </div>
+
+                    <div class="mb-2 flex justify-between items-end">
+                        <span class="font-bold text-lg">Mis Sellos</span>
+                        <span class="text-indigo-600 font-bold text-xl" x-text="userData.stamps"></span>
+                    </div>
+                    <div class="stamp-grid bg-gray-50 p-4 rounded-lg border">
+                        <template x-for="i in 10">
+                            <div class="stamp" :class="i <= userData.stamps ? 'filled' : ''">
+                                <span x-show="i <= userData.stamps">★</span>
+                            </div>
+                        </template>
+                    </div>
+                    <button @click="fetchData" class="mt-4 text-indigo-500 text-sm underline">Actualizar</button>
+                </div>
+            </div>
+
+            <!-- VIEW: MERCHANT -->
+            <div x-show="token && userRole === 'merchant'">
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-xl font-bold mb-2 text-center" x-text="userData.business_name || 'Comercio'"></h2>
+                    <p class="text-center text-gray-500 mb-6">Escáner</p>
+
+                    <div x-show="!scanSuccess">
+                        <div id="reader" class="w-full rounded-lg overflow-hidden border-2 border-indigo-200 bg-black min-h-[250px]"></div>
+                        <p class="text-center text-xs text-gray-400 mt-2">Apunta la cámara al QR</p>
+                    </div>
+
+                    <div x-show="scanSuccess" class="text-center py-10">
+                        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-500 mb-4">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-gray-800">¡Sello Añadido!</h3>
+                        <p class="text-gray-600 mt-2" x-text="scanMessage"></p>
+                        <button @click="resetScanner" class="mt-6 bg-indigo-600 text-white px-6 py-2 rounded-full font-bold hover:bg-indigo-700">Escanear otro</button>
+                    </div>
+                    
+                    <div class="text-center mt-4">
+                        <button @click="initScanner" class="text-xs text-indigo-400 underline">Reiniciar cámara</button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        // Check HTTPS for camera
+        if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            document.getElementById('https-warning').classList.remove('hidden');
+        }
+
+        // Esperar a que Alpine esté listo
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('app', app);
+        });
+
+        function app() {
+            return {
+                authMode: 'login',
+                authForm: { username: '', password: '', role: 'customer', business_name: '' },
+                token: localStorage.getItem('access_token') || null,
+                userRole: localStorage.getItem('user_role') || null,
+                userData: {},
+                message: '',
+                globalError: '',
+                
+                qrTimer: 60,
+                qrInterval: null,
+                html5QrcodeScanner: null,
+                scanSuccess: false,
+                scanMessage: '',
+
+                async init() {
+                    if (this.token) {
+                        try {
+                            // Intentamos recuperar datos. Si falla o no hay rol, logout es la red de seguridad.
+                            await this.fetchData();
+                            
+                            // Aseguramos que el rol esté sincronizado
+                            if (this.userData.role) {
+                                this.userRole = this.userData.role;
+                                localStorage.setItem('user_role', this.userRole);
+                            }
+
+                            if (this.userRole === 'customer') this.startQRGenerator();
+                            if (this.userRole === 'merchant') this.initScanner();
+                        } catch (e) {
+                            console.error("Error init", e);
+                            this.globalError = "Error de sesión. Por favor reinicia.";
+                        }
+                    }
+                },
+
+                async submitAuth() {
+                    this.message = '';
+                    this.globalError = '';
+                    try {
+                        if (this.authMode === 'register') {
+                            await axios.post('/api/register', {
+                                email: this.authForm.username,
+                                password: this.authForm.password,
+                                role: this.authForm.role,
+                                business_name: this.authForm.business_name
+                            });
+                            this.authMode = 'login';
+                            this.message = '¡Registro exitoso! Por favor inicia sesión.';
+                            return;
+                        }
+
+                        const formData = new FormData();
+                        formData.append('username', this.authForm.username);
+                        formData.append('password', this.authForm.password);
+                        
+                        const response = await axios.post('/token', formData);
+                        this.token = response.data.access_token;
+                        this.userRole = response.data.role;
+                        
+                        localStorage.setItem('access_token', this.token);
+                        localStorage.setItem('user_role', this.userRole);
+                        
+                        await this.fetchData();
+                        
+                        if (this.userRole === 'customer') this.startQRGenerator();
+                        if (this.userRole === 'merchant') this.initScanner();
+
+                    } catch (error) {
+                        this.message = error.response?.data?.detail || 'Error de conexión';
+                    }
+                },
+
+                async fetchData() {
+                    try {
+                        const response = await axios.get('/api/me', {
+                            headers: { Authorization: `Bearer ${this.token}` }
+                        });
+                        this.userData = response.data;
+                        // ACTUALIZACION CRITICA: Guardar el rol que viene del servidor
+                        this.userRole = response.data.role;
+                        localStorage.setItem('user_role', this.userRole);
+                    } catch (e) {
+                        if(e.response && e.response.status === 401) this.logout();
+                        throw e; // Relanzar para que init lo capture
+                    }
+                },
+
+                logout() {
+                    this.token = null;
+                    this.userRole = null;
+                    this.userData = {};
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('user_role');
+                    clearInterval(this.qrInterval);
+                    try { if(this.html5QrcodeScanner) this.html5QrcodeScanner.clear(); } catch(e){}
+                    
+                    // Forzamos recarga para limpiar memoria de JS
+                    window.location.reload();
+                },
+
+                startQRGenerator() {
+                    this.fetchAndRenderQR();
+                    this.qrInterval = setInterval(() => {
+                        this.qrTimer--;
+                        if (this.qrTimer <= 0) this.fetchAndRenderQR();
+                    }, 1000);
+                },
+
+                async fetchAndRenderQR() {
+                    try {
+                        const response = await axios.get('/api/customer/qr-token', {
+                            headers: { Authorization: `Bearer ${this.token}` }
+                        });
+                        
+                        this.qrTimer = response.data.expires_in;
+                        const container = document.getElementById("qrcode");
+                        if(container) {
+                            container.innerHTML = "";
+                            new QRCode(container, {
+                                text: response.data.qr_token,
+                                width: 180,
+                                height: 180
+                            });
+                        }
+                    } catch (e) {
+                        console.error("Error fetching QR", e);
+                    }
+                },
+
+                initScanner() {
+                    this.scanSuccess = false; 
+                    
+                    this.$nextTick(() => {
+                        try {
+                            if(!document.getElementById('reader')) return;
+                            
+                            if(this.html5QrcodeScanner) {
+                                try { this.html5QrcodeScanner.clear(); } catch(e){}
+                            }
+
+                            if(typeof Html5QrcodeScanner === 'undefined') {
+                                this.globalError = "Error: Librería de cámara no cargó.";
+                                return;
+                            }
+                            
+                            this.html5QrcodeScanner = new Html5QrcodeScanner(
+                                "reader", { fps: 10, qrbox: 250 });
+                            
+                            this.html5QrcodeScanner.render(this.onScanSuccess.bind(this), (err) => {
+                                // Ignorar errores de frame vacío
+                            });
+                        } catch(e) {
+                            console.error(e);
+                            this.globalError = "No se pudo iniciar la cámara. Asegúrate de estar en HTTPS o localhost.";
+                        }
+                    });
+                },
+
+                async onScanSuccess(decodedText, decodedResult) {
+                    if(this.html5QrcodeScanner) this.html5QrcodeScanner.pause(); 
+                    
+                    try {
+                        const response = await axios.post(`/api/merchant/scan?qr_token=${decodedText}`, {}, {
+                            headers: { Authorization: `Bearer ${this.token}` }
+                        });
+                        this.scanSuccess = true;
+                        this.scanMessage = `Sello asignado a: ${response.data.customer_email}. Total: ${response.data.new_total}`;
+                    } catch (error) {
+                        alert(error.response?.data?.detail || "Error al procesar QR");
+                        if(this.html5QrcodeScanner) this.html5QrcodeScanner.resume();
+                    }
+                },
+
+                resetScanner() {
+                    this.scanSuccess = false;
+                    this.scanMessage = '';
+                    if(this.html5QrcodeScanner) this.html5QrcodeScanner.resume();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
