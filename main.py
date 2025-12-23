@@ -2,33 +2,33 @@ import uvicorn
 import os
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
-from sqlalchemy.orm import sessionmaker, Session, relationship, declarative_base
-from pydantic import BaseModel
+from sqlalchemy.orm import sessionmaker, Session, declarative_base
+from pydantic import BaseModel, field_validator
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-import json
 
 # ================= CONFIGURACIÓN CLOUD READY =================
-# Leemos secretos de variables de entorno, o usamos valores por defecto para local
 SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-change-me-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 QR_TOKEN_EXPIRE_SECONDS = 60
 
-# Configuración de Base de Datos Dinámica
-# Si estamos en Render, usará la variable DATABASE_URL. Si no, usa SQLite local.
+# Base de Datos Dinámica
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./loyalty.db")
-
-# FIX: Render entrega la URL como 'postgres://', pero SQLAlchemy requiere 'postgresql://'
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # ================= BASE DE DATOS =================
-engine = create_engine(DATABASE_URL)
+if DATABASE_URL.startswith("postgresql"):
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=3600)
+else:
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -51,7 +51,7 @@ class Transaction(Base):
 Base.metadata.create_all(bind=engine)
 
 # ================= SEGURIDAD =================
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def verify_password(plain_password, hashed_password):
@@ -79,6 +79,20 @@ class UserCreate(BaseModel):
     role: str
     business_name: Optional[str] = None
 
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if not v or "@" not in v:
+            raise ValueError("Email inválido")
+        return v.lower().strip()
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v):
+        if not v or len(v) < 6:
+            raise ValueError("La contraseña debe tener al menos 6 caracteres")
+        return v
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -86,6 +100,15 @@ class Token(BaseModel):
 
 # ================= APP FASTAPI =================
 app = FastAPI(title="Loyalty MVP")
+
+# CORS Middleware (crítico para frontend)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
@@ -108,20 +131,34 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
 # --- RUTAS ---
 @app.post("/api/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.email == user.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="El email ya está registrado")
-    
-    hashed_password = get_password_hash(user.password)
-    new_user = User(
-        email=user.email,
-        hashed_password=hashed_password,
-        role=user.role,
-        business_name=user.business_name if user.role == 'merchant' else None
-    )
-    db.add(new_user)
-    db.commit()
-    return {"message": "Usuario creado exitosamente"}
+    try:
+        db_user = db.query(User).filter(User.email == user.email).first()
+        if db_user:
+            raise HTTPException(status_code=400, detail="El email ya está registrado")
+        
+        if user.role not in ["customer", "merchant"]:
+            raise HTTPException(status_code=400, detail="Role inválido")
+        
+        if user.role == "merchant" and not user.business_name:
+            raise HTTPException(status_code=400, detail="El nombre del comercio es requerido")
+        
+        hashed_password = get_password_hash(user.password)
+        new_user = User(
+            email=user.email,
+            hashed_password=hashed_password,
+            role=user.role,
+            business_name=user.business_name if user.role == "merchant" else None
+        )
+        db.add(new_user)
+        db.commit()
+        
+        return {"message": "Usuario creado exitosamente", "email": new_user.email}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error registro: {e}")
+        raise HTTPException(status_code=500, detail="Error al crear usuario")
 
 @app.post("/token", response_model=Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -182,9 +219,18 @@ def scan_qr(qr_token: str, current_user: User = Depends(get_current_user), db: S
         "new_total": customer.stamps
     }
 
+# ================= RUTA PRINCIPAL =================
 @app.get("/")
 async def read_root():
-    return FileResponse("index.html")
+    # Usar ruta absoluta para compatibilidad con Render
+    html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+    if not os.path.exists(html_path):
+        return {"error": "index.html no encontrado"}
+    return FileResponse(html_path)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
