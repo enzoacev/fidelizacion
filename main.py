@@ -1,28 +1,34 @@
 import uvicorn
+import os
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from pydantic import BaseModel, field_validator
+from sqlalchemy.orm import sessionmaker, Session, relationship, declarative_base
+from pydantic import BaseModel
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-import socket
-import os
+import json
 
-# ================= CONFIGURACIÓN =================
-SECRET_KEY = "super-secret-key-change-me-in-production"
+# ================= CONFIGURACIÓN CLOUD READY =================
+# Leemos secretos de variables de entorno, o usamos valores por defecto para local
+SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-change-me-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 QR_TOKEN_EXPIRE_SECONDS = 60
 
-DATABASE_URL = "sqlite:///./loyalty.db"
+# Configuración de Base de Datos Dinámica
+# Si estamos en Render, usará la variable DATABASE_URL. Si no, usa SQLite local.
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./loyalty.db")
+
+# FIX: Render entrega la URL como 'postgres://', pero SQLAlchemy requiere 'postgresql://'
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # ================= BASE DE DATOS =================
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -31,7 +37,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
-    role = Column(String)  # 'merchant' o 'customer'
+    role = Column(String)
     business_name = Column(String, nullable=True)
     stamps = Column(Integer, default=0)
 
@@ -45,7 +51,7 @@ class Transaction(Base):
 Base.metadata.create_all(bind=engine)
 
 # ================= SEGURIDAD =================
-pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def verify_password(plain_password, hashed_password):
@@ -73,20 +79,6 @@ class UserCreate(BaseModel):
     role: str
     business_name: Optional[str] = None
 
-    @field_validator('email')
-    @classmethod
-    def validate_email(cls, v):
-        if not v or "@" not in v:
-            raise ValueError("Email inválido")
-        return v.lower().strip()
-
-    @field_validator('password')
-    @classmethod
-    def validate_password(cls, v):
-        if not v or len(v) < 6:
-            raise ValueError("La contraseña debe tener al menos 6 caracteres")
-        return v  # No necesita truncado con argon2
-
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -94,15 +86,6 @@ class Token(BaseModel):
 
 # ================= APP FASTAPI =================
 app = FastAPI(title="Loyalty MVP")
-
-# Agregar CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
@@ -125,40 +108,20 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
 # --- RUTAS ---
 @app.post("/api/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    try:
-        # Verificar si el usuario ya existe
-        db_user = db.query(User).filter(User.email == user.email).first()
-        if db_user:
-            raise HTTPException(status_code=400, detail="El email ya está registrado")
-        
-        # Validar role
-        if user.role not in ["customer", "merchant"]:
-            raise HTTPException(status_code=400, detail="Role inválido")
-        
-        # Validar business_name si es merchant
-        if user.role == "merchant" and not user.business_name:
-            raise HTTPException(status_code=400, detail="El nombre del comercio es requerido")
-        
-        # Crear usuario (contraseña ya validada y truncada)
-        hashed_password = get_password_hash(user.password)
-        new_user = User(
-            email=user.email,
-            hashed_password=hashed_password,
-            role=user.role,
-            business_name=user.business_name if user.role == "merchant" else None
-        )
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
-        
-        return {"message": "Usuario creado exitosamente", "email": new_user.email}
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="El email ya está registrado")
     
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        print(f"Error en registro: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error al crear usuario")
+    hashed_password = get_password_hash(user.password)
+    new_user = User(
+        email=user.email,
+        hashed_password=hashed_password,
+        role=user.role,
+        business_name=user.business_name if user.role == 'merchant' else None
+    )
+    db.add(new_user)
+    db.commit()
+    return {"message": "Usuario creado exitosamente"}
 
 @app.post("/token", response_model=Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
@@ -219,24 +182,10 @@ def scan_qr(qr_token: str, current_user: User = Depends(get_current_user), db: S
         "new_total": customer.stamps
     }
 
-# ================= ROUTE PRINCIPAL =================
 @app.get("/")
 async def read_root():
-    return FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
+    return FileResponse("index.html")
 
 if __name__ == "__main__":
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
-        s.close()
-    except:
-        local_ip = "127.0.0.1"
-
-    print("\n" + "="*50)
-    print(f"✅ SERVIDOR INICIADO")
-    print(f"👉 En tu PC:     http://localhost:8000")
-    print(f"👉 En tu Móvil:  http://{local_ip}:8000")
-    print("="*50 + "\n")
-    
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
