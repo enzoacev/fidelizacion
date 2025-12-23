@@ -4,15 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Loyalty MVP</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Axios -->
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-    <!-- QRCode.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <!-- Html5-QRCode Scanner -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <!-- Alpine.js CON DEFER -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
 
     <style>
@@ -24,14 +19,12 @@
 </head>
 <body class="bg-gray-50 text-gray-800">
 
-    <!-- App Container -->
     <div x-data="app()" x-cloak>
         
         <!-- NAVBAR -->
         <nav class="bg-indigo-600 text-white p-4 shadow-md">
             <div class="container mx-auto flex justify-between items-center">
                 <h1 class="text-xl font-bold">Loyalty<span class="text-indigo-200">App</span></h1>
-                <!-- Botón de Reset siempre visible si hay token, por seguridad -->
                 <button x-show="token" @click="logout" class="text-sm bg-indigo-800 px-3 py-1 rounded hover:bg-indigo-900 border border-indigo-500">
                     Salir / Reiniciar
                 </button>
@@ -44,59 +37,143 @@
             <!-- HTTPS WARNING -->
             <div id="https-warning" class="hidden bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4" role="alert">
                 <p class="font-bold">Atención</p>
-                <p class="text-sm">Para usar la cámara en el móvil, usa una conexión segura (HTTPS) o `localhost`. Si estás probando con IP (192.168...), la cámara podría bloquearse.</p>
+                <p class="text-sm">Para usar la cámara, usa HTTPS o localhost.</p>
             </div>
 
             <!-- ERROR ALERT -->
             <div x-show="globalError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
                 <strong class="font-bold">Error:</strong>
                 <span class="block sm:inline" x-text="globalError"></span>
-                <button @click="logout" class="block mt-2 text-sm underline font-bold">Reiniciar Aplicación</button>
+                <button @click="logout" class="block mt-2 text-sm underline font-bold">Reiniciar</button>
             </div>
 
-            <!-- VIEW: LOADING STATE (Visible solo cuando hay token pero no rol, o cargando) -->
+            <!-- VIEW: LOADING STATE -->
             <div x-show="token && !userData.email && !globalError" class="text-center py-10">
                 <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mx-auto mb-4"></div>
                 <p class="text-gray-500">Recuperando sesión...</p>
                 <button @click="logout" class="text-indigo-500 text-sm underline mt-4">¿Tarda mucho? Haz clic aquí</button>
             </div>
 
-            <!-- VIEW: AUTH (Login/Registro) -->
-            <div x-show="!token">
+            <!-- VIEW: AUTH (LOGIN) -->
+            <div x-show="!token && authMode === 'login'">
                 <div class="bg-white p-6 rounded-lg shadow-lg">
-                    <div class="flex justify-center mb-6 space-x-4">
-                        <button @click="authMode = 'login'" :class="authMode === 'login' ? 'text-indigo-600 font-bold border-b-2 border-indigo-600' : 'text-gray-500'">Ingresar</button>
-                        <button @click="authMode = 'register'" :class="authMode === 'register' ? 'text-indigo-600 font-bold border-b-2 border-indigo-600' : 'text-gray-500'">Registrarse</button>
-                    </div>
+                    <h2 class="text-2xl font-bold mb-6 text-center text-indigo-600">Iniciar Sesión</h2>
 
                     <form @submit.prevent="submitAuth">
                         <div class="mb-4">
-                            <label class="block text-sm font-medium mb-1">Email</label>
-                            <input type="email" x-model="authForm.username" class="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                            <label class="block text-sm font-medium mb-1">DNI o Email</label>
+                            <input type="text" x-model="loginForm.username" placeholder="12345678 o tu@email.com" class="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
+                            <p class="text-xs text-gray-500 mt-1">Clientes: ingresa tu DNI | Comercios: ingresa tu email</p>
                         </div>
-                        <div class="mb-4">
+                        <div class="mb-6">
                             <label class="block text-sm font-medium mb-1">Contraseña</label>
-                            <input type="password" x-model="authForm.password" class="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500" required>
-                        </div>
-
-                        <div x-show="authMode === 'register'">
-                             <div class="mb-4">
-                                <label class="block text-sm font-medium mb-1">Soy...</label>
-                                <select x-model="authForm.role" class="w-full p-2 border rounded">
-                                    <option value="customer">Cliente</option>
-                                    <option value="merchant">Comercio</option>
-                                </select>
-                            </div>
-                            <div x-show="authForm.role === 'merchant'" class="mb-4">
-                                <label class="block text-sm font-medium mb-1">Nombre del Comercio</label>
-                                <input type="text" x-model="authForm.business_name" class="w-full p-2 border rounded">
+                            <div class="flex">
+                                <input :type="showPassword ? 'text' : 'password'" x-model="loginForm.password" class="flex-1 p-2 border rounded-l focus:ring-2 focus:ring-indigo-500" required>
+                                <button type="button" @click="showPassword = !showPassword" class="px-3 bg-gray-200 border border-l-0 rounded-r hover:bg-gray-300">
+                                    <span x-show="!showPassword">👁️</span>
+                                    <span x-show="showPassword">🙈</span>
+                                </button>
                             </div>
                         </div>
 
-                        <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 transition">
-                            <span x-text="authMode === 'login' ? 'Entrar' : 'Crear Cuenta'"></span>
+                        <button type="submit" class="w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700 transition mb-4">
+                            Entrar
                         </button>
                     </form>
+
+                    <div class="border-t pt-4 space-y-2">
+                        <button @click="authMode = 'register-customer'" class="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700 transition">
+                            Registrarse como Cliente
+                        </button>
+                        <button @click="authMode = 'register-merchant'" class="w-full bg-green-600 text-white py-2 rounded font-bold hover:bg-green-700 transition">
+                            Registrarse como Comercio
+                        </button>
+                    </div>
+
+                    <p x-text="message" class="mt-4 text-center text-red-500 text-sm"></p>
+                </div>
+            </div>
+
+            <!-- VIEW: REGISTRO CLIENTE -->
+            <div x-show="!token && authMode === 'register-customer'">
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-2xl font-bold mb-6 text-center text-blue-600">Registro Cliente</h2>
+
+                    <form @submit.prevent="submitRegisterCustomer">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">DNI</label>
+                            <input type="text" x-model="customerForm.dni" placeholder="12345678" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">Nombre Completo</label>
+                            <input type="text" x-model="customerForm.full_name" placeholder="Juan Pérez García" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">Email</label>
+                            <input type="email" x-model="customerForm.email" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">Fecha de Nacimiento</label>
+                            <input type="date" x-model="customerForm.birthdate" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" required>
+                        </div>
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium mb-1">Contraseña</label>
+                            <div class="flex">
+                                <input :type="showCustomerPassword ? 'text' : 'password'" x-model="customerForm.password" class="flex-1 p-2 border rounded-l focus:ring-2 focus:ring-blue-500" required>
+                                <button type="button" @click="showCustomerPassword = !showCustomerPassword" class="px-3 bg-gray-200 border border-l-0 rounded-r hover:bg-gray-300">
+                                    <span x-show="!showCustomerPassword">👁️</span>
+                                    <span x-show="showCustomerPassword">🙈</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700 transition mb-4">
+                            Crear Cuenta
+                        </button>
+                    </form>
+
+                    <button @click="authMode = 'login'" class="w-full text-indigo-600 py-2 rounded font-bold border border-indigo-600 hover:bg-indigo-50 transition">
+                        ← Volver a Login
+                    </button>
+
+                    <p x-text="message" class="mt-4 text-center text-red-500 text-sm"></p>
+                </div>
+            </div>
+
+            <!-- VIEW: REGISTRO COMERCIO -->
+            <div x-show="!token && authMode === 'register-merchant'">
+                <div class="bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-2xl font-bold mb-6 text-center text-green-600">Registro Comercio</h2>
+
+                    <form @submit.prevent="submitRegisterMerchant">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">Nombre del Comercio</label>
+                            <input type="text" x-model="merchantForm.business_name" placeholder="Mi Tienda" class="w-full p-2 border rounded focus:ring-2 focus:ring-green-500" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-1">Email</label>
+                            <input type="email" x-model="merchantForm.email" class="w-full p-2 border rounded focus:ring-2 focus:ring-green-500" required>
+                        </div>
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium mb-1">Contraseña</label>
+                            <div class="flex">
+                                <input :type="showMerchantPassword ? 'text' : 'password'" x-model="merchantForm.password" class="flex-1 p-2 border rounded-l focus:ring-2 focus:ring-green-500" required>
+                                <button type="button" @click="showMerchantPassword = !showMerchantPassword" class="px-3 bg-gray-200 border border-l-0 rounded-r hover:bg-gray-300">
+                                    <span x-show="!showMerchantPassword">👁️</span>
+                                    <span x-show="showMerchantPassword">🙈</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="w-full bg-green-600 text-white py-2 rounded font-bold hover:bg-green-700 transition mb-4">
+                            Crear Comercio
+                        </button>
+                    </form>
+
+                    <button @click="authMode = 'login'" class="w-full text-indigo-600 py-2 rounded font-bold border border-indigo-600 hover:bg-indigo-50 transition">
+                        ← Volver a Login
+                    </button>
+
                     <p x-text="message" class="mt-4 text-center text-red-500 text-sm"></p>
                 </div>
             </div>
@@ -130,25 +207,77 @@
             <!-- VIEW: MERCHANT -->
             <div x-show="token && userRole === 'merchant'">
                 <div class="bg-white p-6 rounded-lg shadow-lg">
-                    <h2 class="text-xl font-bold mb-2 text-center" x-text="userData.business_name || 'Comercio'"></h2>
-                    <p class="text-center text-gray-500 mb-6">Escáner</p>
+                    <h2 class="text-2xl font-bold mb-2 text-center text-indigo-600" x-text="userData.business_name || 'Mi Comercio'"></h2>
+                    <p class="text-center text-gray-600 mb-6 text-sm" x-text="userData.email"></p>
 
-                    <div x-show="!scanSuccess">
-                        <div id="reader" class="w-full rounded-lg overflow-hidden border-2 border-indigo-200 bg-black min-h-[250px]"></div>
-                        <p class="text-center text-xs text-gray-400 mt-2">Apunta la cámara al QR</p>
-                    </div>
+                    <div class="space-y-3 mb-6">
+                        <a href="/merchant-dashboard" class="block w-full bg-indigo-600 text-white py-3 rounded-lg font-bold text-center hover:bg-indigo-700 transition">
+                            📊 Ir a Dashboard
+                        </a>
 
-                    <div x-show="scanSuccess" class="text-center py-10">
-                        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-500 mb-4">
-                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <div x-show="merchantConfig.fidelization_type === 'qr'">
+                            <button @click="showScanner = !showScanner" 
+                                :class="showScanner ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'"
+                                class="w-full text-white py-3 rounded-lg font-bold transition">
+                                <span x-show="!showScanner">📱 Abrir Escáner QR</span>
+                                <span x-show="showScanner">✕ Cerrar Escáner</span>
+                            </button>
                         </div>
-                        <h3 class="text-lg font-bold text-gray-800">¡Sello Añadido!</h3>
-                        <p class="text-gray-600 mt-2" x-text="scanMessage"></p>
-                        <button @click="resetScanner" class="mt-6 bg-indigo-600 text-white px-6 py-2 rounded-full font-bold hover:bg-indigo-700">Escanear otro</button>
+
+                        <div x-show="merchantConfig.fidelization_type === 'dni'">
+                            <button @click="showDniForm = !showDniForm"
+                                :class="showDniForm ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'"
+                                class="w-full text-white py-3 rounded-lg font-bold transition">
+                                <span x-show="!showDniForm">🆔 Agregar Sello por DNI</span>
+                                <span x-show="showDniForm">✕ Cerrar Formulario</span>
+                            </button>
+                        </div>
                     </div>
-                    
-                    <div class="text-center mt-4">
-                        <button @click="initScanner" class="text-xs text-indigo-400 underline">Reiniciar cámara</button>
+
+                    <!-- SCANNER (QR MODE) -->
+                    <div x-show="showScanner && merchantConfig.fidelization_type === 'qr'" class="border-t pt-6">
+                        <p class="text-center text-gray-600 mb-4 font-semibold">Escanear QR del Cliente</p>
+
+                        <div x-show="!scanSuccess">
+                            <div id="reader" class="w-full rounded-lg overflow-hidden border-2 border-indigo-200 bg-black min-h-[250px]"></div>
+                            <p class="text-center text-xs text-gray-400 mt-2">Apunta la cámara al QR del cliente</p>
+                        </div>
+
+                        <div x-show="scanSuccess" class="text-center py-10">
+                            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-500 mb-4">
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            </div>
+                            <h3 class="text-lg font-bold text-gray-800">¡Sello Añadido!</h3>
+                            <p class="text-gray-600 mt-2" x-text="scanMessage"></p>
+                            <button @click="resetScanner" class="mt-6 bg-indigo-600 text-white px-6 py-2 rounded-full font-bold hover:bg-indigo-700">Escanear otro</button>
+                        </div>
+                        
+                        <div class="text-center mt-4">
+                            <button @click="initScanner" class="text-xs text-indigo-400 underline">Reiniciar cámara</button>
+                        </div>
+                    </div>
+
+                    <!-- DNI FORM (DNI MODE) -->
+                    <div x-show="showDniForm && merchantConfig.fidelization_type === 'dni'" class="border-t pt-6">
+                        <p class="text-center text-gray-600 mb-4 font-semibold">Agregar Sello al Cliente</p>
+
+                        <div x-show="!dniSuccess" class="space-y-3">
+                            <input type="email" x-model="dniForm.email" placeholder="Email del cliente"
+                                class="w-full p-3 border rounded focus:ring-2 focus:ring-green-500">
+                            <button @click="addStampByDni" class="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700">
+                                ➕ Agregar Sello
+                            </button>
+                            <p x-text="dniError" class="text-red-600 text-sm" x-show="dniError"></p>
+                        </div>
+
+                        <div x-show="dniSuccess" class="text-center py-10">
+                            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-500 mb-4">
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            </div>
+                            <h3 class="text-lg font-bold text-gray-800">¡Sello Añadido!</h3>
+                            <p class="text-gray-600 mt-2" x-text="dniMessage"></p>
+                            <button @click="resetDniForm" class="mt-6 bg-indigo-600 text-white px-6 py-2 rounded-full font-bold hover:bg-indigo-700">Agregar otro</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -157,12 +286,10 @@
     </div>
 
     <script>
-        // Check HTTPS for camera
         if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
             document.getElementById('https-warning').classList.remove('hidden');
         }
 
-        // Esperar a que Alpine esté listo
         document.addEventListener('alpine:init', () => {
             Alpine.data('app', app);
         });
@@ -170,7 +297,14 @@
         function app() {
             return {
                 authMode: 'login',
-                authForm: { username: '', password: '', role: 'customer', business_name: '' },
+                loginForm: { username: '', password: '' },
+                customerForm: { dni: '', full_name: '', email: '', password: '', birthdate: '' },
+                merchantForm: { business_name: '', email: '', password: '' },
+                
+                showPassword: false,
+                showCustomerPassword: false,
+                showMerchantPassword: false,
+                
                 token: localStorage.getItem('access_token') || null,
                 userRole: localStorage.getItem('user_role') || null,
                 userData: {},
@@ -182,21 +316,28 @@
                 html5QrcodeScanner: null,
                 scanSuccess: false,
                 scanMessage: '',
+                showScanner: false,
+                showDniForm: false,
+                merchantConfig: { fidelization_type: 'qr' },
+                dniForm: { email: '' },
+                dniSuccess: false,
+                dniMessage: '',
+                dniError: '',
 
                 async init() {
                     if (this.token) {
                         try {
-                            // Intentamos recuperar datos. Si falla o no hay rol, logout es la red de seguridad.
                             await this.fetchData();
                             
-                            // Aseguramos que el rol esté sincronizado
                             if (this.userData.role) {
                                 this.userRole = this.userData.role;
                                 localStorage.setItem('user_role', this.userRole);
                             }
 
                             if (this.userRole === 'customer') this.startQRGenerator();
-                            if (this.userRole === 'merchant') this.initScanner();
+                            if (this.userRole === 'merchant') {
+                                await this.loadMerchantConfig();
+                            }
                         } catch (e) {
                             console.error("Error init", e);
                             this.globalError = "Error de sesión. Por favor reinicia.";
@@ -204,25 +345,24 @@
                     }
                 },
 
+                async loadMerchantConfig() {
+                    try {
+                        const res = await axios.get('/api/merchant/config', {
+                            headers: { Authorization: `Bearer ${this.token}` }
+                        });
+                        this.merchantConfig = res.data;
+                    } catch (e) {
+                        console.error("Error cargando config:", e);
+                    }
+                },
+
                 async submitAuth() {
                     this.message = '';
                     this.globalError = '';
                     try {
-                        if (this.authMode === 'register') {
-                            await axios.post('/api/register', {
-                                email: this.authForm.username,
-                                password: this.authForm.password,
-                                role: this.authForm.role,
-                                business_name: this.authForm.business_name
-                            });
-                            this.authMode = 'login';
-                            this.message = '¡Registro exitoso! Por favor inicia sesión.';
-                            return;
-                        }
-
                         const formData = new FormData();
-                        formData.append('username', this.authForm.username);
-                        formData.append('password', this.authForm.password);
+                        formData.append('username', this.loginForm.username);
+                        formData.append('password', this.loginForm.password);
                         
                         const response = await axios.post('/token', formData);
                         this.token = response.data.access_token;
@@ -234,10 +374,47 @@
                         await this.fetchData();
                         
                         if (this.userRole === 'customer') this.startQRGenerator();
-                        if (this.userRole === 'merchant') this.initScanner();
+                        if (this.userRole === 'merchant') await this.loadMerchantConfig();
 
                     } catch (error) {
                         this.message = error.response?.data?.detail || 'Error de conexión';
+                    }
+                },
+
+                async submitRegisterCustomer() {
+                    this.message = '';
+                    try {
+                        await axios.post('/api/register-customer', {
+                            dni: this.customerForm.dni,
+                            full_name: this.customerForm.full_name,
+                            email: this.customerForm.email,
+                            password: this.customerForm.password,
+                            birthdate: this.customerForm.birthdate
+                        });
+                        this.message = '¡Registro exitoso! Por favor inicia sesión.';
+                        this.authMode = 'login';
+                        this.loginForm.username = this.customerForm.dni;
+                        this.customerForm = { dni: '', full_name: '', email: '', password: '', birthdate: '' };
+                    } catch (error) {
+                        this.message = error.response?.data?.detail || 'Error al registrar';
+                    }
+                },
+
+                async submitRegisterMerchant() {
+                    this.message = '';
+                    try {
+                        await axios.post('/api/register', {
+                            email: this.merchantForm.email,
+                            password: this.merchantForm.password,
+                            role: 'merchant',
+                            business_name: this.merchantForm.business_name
+                        });
+                        this.message = '¡Comercio registrado! Por favor inicia sesión.';
+                        this.authMode = 'login';
+                        this.loginForm.username = this.merchantForm.email;
+                        this.merchantForm = { business_name: '', email: '', password: '' };
+                    } catch (error) {
+                        this.message = error.response?.data?.detail || 'Error al registrar';
                     }
                 },
 
@@ -247,12 +424,11 @@
                             headers: { Authorization: `Bearer ${this.token}` }
                         });
                         this.userData = response.data;
-                        // ACTUALIZACION CRITICA: Guardar el rol que viene del servidor
                         this.userRole = response.data.role;
                         localStorage.setItem('user_role', this.userRole);
                     } catch (e) {
                         if(e.response && e.response.status === 401) this.logout();
-                        throw e; // Relanzar para que init lo capture
+                        throw e;
                     }
                 },
 
@@ -264,8 +440,6 @@
                     localStorage.removeItem('user_role');
                     clearInterval(this.qrInterval);
                     try { if(this.html5QrcodeScanner) this.html5QrcodeScanner.clear(); } catch(e){}
-                    
-                    // Forzamos recarga para limpiar memoria de JS
                     window.location.reload();
                 },
 
@@ -299,6 +473,7 @@
                 },
 
                 initScanner() {
+                    if (!this.showScanner) return;
                     this.scanSuccess = false; 
                     
                     this.$nextTick(() => {
@@ -322,7 +497,7 @@
                             });
                         } catch(e) {
                             console.error(e);
-                            this.globalError = "No se pudo iniciar la cámara. Asegúrate de estar en HTTPS o localhost.";
+                            this.globalError = "No se pudo iniciar la cámara.";
                         }
                     });
                 },
@@ -346,6 +521,34 @@
                     this.scanSuccess = false;
                     this.scanMessage = '';
                     if(this.html5QrcodeScanner) this.html5QrcodeScanner.resume();
+                },
+
+                async addStampByDni() {
+                    if (!this.dniForm.email.trim()) {
+                        this.dniError = "Email requerido";
+                        return;
+                    }
+
+                    try {
+                        const res = await axios.post('/api/merchant/add-stamp-dni', null, {
+                            params: { dni: this.dniForm.email },
+                            headers: { Authorization: `Bearer ${this.token}` }
+                        });
+                        
+                        this.dniSuccess = true;
+                        this.dniMessage = `Sello asignado a: ${res.data.customer_email}. Total: ${res.data.new_total}`;
+                        this.dniError = '';
+                    } catch (error) {
+                        this.dniError = error.response?.data?.detail || "Error al agregar sello";
+                        this.dniSuccess = false;
+                    }
+                },
+
+                resetDniForm() {
+                    this.dniSuccess = false;
+                    this.dniMessage = '';
+                    this.dniError = '';
+                    this.dniForm.email = '';
                 }
             }
         }
