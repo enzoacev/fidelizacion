@@ -27,19 +27,22 @@
 
         <!-- TABS -->
         <div class="bg-white border-b shadow-sm">
-            <div class="container mx-auto flex">
+            <div class="container mx-auto flex flex-wrap">
                 <button @click="tab = 'stats'" 
                     :class="tab === 'stats' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-600'"
-                    class="px-6 py-4 font-semibold hover:text-indigo-600">📊 Estadísticas</button>
+                    class="px-4 py-3 sm:px-6 sm:py-4 font-semibold hover:text-indigo-600 text-sm sm:text-base">📊 Estadísticas</button>
+                <button @click="tab = 'add-stamps'" 
+                    :class="tab === 'add-stamps' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-600'"
+                    class="px-4 py-3 sm:px-6 sm:py-4 font-semibold hover:text-indigo-600 text-sm sm:text-base">⭐ Sellos</button>
                 <button @click="tab = 'rewards'" 
                     :class="tab === 'rewards' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-600'"
-                    class="px-6 py-4 font-semibold hover:text-indigo-600">🎁 Recompensas</button>
+                    class="px-4 py-3 sm:px-6 sm:py-4 font-semibold hover:text-indigo-600 text-sm sm:text-base">🎁 Recompensas</button>
                 <button @click="tab = 'coupons'" 
                     :class="tab === 'coupons' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-600'"
-                    class="px-6 py-4 font-semibold hover:text-indigo-600">🎟️ Cupones</button>
+                    class="px-4 py-3 sm:px-6 sm:py-4 font-semibold hover:text-indigo-600 text-sm sm:text-base">🎟️ Cupones</button>
                 <button @click="tab = 'config'" 
                     :class="tab === 'config' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-600'"
-                    class="px-6 py-4 font-semibold hover:text-indigo-600">⚙️ Configuración</button>
+                    class="px-4 py-3 sm:px-6 sm:py-4 font-semibold hover:text-indigo-600 text-sm sm:text-base">⚙️ Config</button>
             </div>
         </div>
 
@@ -63,6 +66,54 @@
                 <div class="bg-white p-6 rounded-lg shadow">
                     <div class="text-gray-500 text-sm font-semibold">PENDIENTES</div>
                     <div class="text-3xl font-bold text-orange-600 mt-2" x-text="stats.coupons_pending"></div>
+                </div>
+            </div>
+
+            <!-- ADD STAMPS TAB -->
+            <div x-show="tab === 'add-stamps'" class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-2xl font-bold mb-6">Agregar Sellos</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <!-- QR SCANNER -->
+                    <div x-show="config.fidelization_type === 'qr'" class="border rounded-lg p-6 bg-blue-50">
+                        <h3 class="font-bold text-lg mb-4">📱 Escanear QR</h3>
+                        <button @click="showQrScanner = !showQrScanner; $nextTick(() => initQrScanner())" 
+                            :class="showQrScanner ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'"
+                            class="w-full text-white py-3 rounded font-bold transition mb-4">
+                            <span x-show="!showQrScanner">Abrir Escáner</span>
+                            <span x-show="showQrScanner">Cerrar Escáner</span>
+                        </button>
+                        
+                        <div x-show="showQrScanner && !qrScanSuccess">
+                            <div id="qr-reader" class="w-full rounded border-2 border-blue-300 bg-black min-h-[300px]"></div>
+                            <p class="text-center text-xs text-gray-500 mt-2">Apunta al QR del cliente</p>
+                        </div>
+                        
+                        <div x-show="showQrScanner && qrScanSuccess" class="text-center py-6">
+                            <div class="inline-block bg-green-100 text-green-600 rounded-full p-4 mb-4">
+                                <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                            </div>
+                            <p class="font-bold text-green-700 mb-2" x-text="qrMessage"></p>
+                            <button @click="resetQrScanner" class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700">
+                                Escanear otro
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- DNI FORM -->
+                    <div x-show="config.fidelization_type === 'dni'" class="border rounded-lg p-6 bg-green-50">
+                        <h3 class="font-bold text-lg mb-4">🆔 Por DNI del Cliente</h3>
+                        <div class="space-y-3">
+                            <input type="text" x-model="stampForm.dni" placeholder="DNI del cliente"
+                                class="w-full p-3 border rounded focus:ring-2 focus:ring-green-500">
+                            <button @click="addStampByDni" class="w-full bg-green-600 text-white py-3 rounded font-bold hover:bg-green-700">
+                                ➕ Agregar Sello
+                            </button>
+                            <p x-text="stampForm.message" :class="stampForm.error ? 'text-red-600' : 'text-green-600'" 
+                                class="text-sm text-center" x-show="stampForm.message"></p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -150,18 +201,41 @@
             <div x-show="tab === 'config'" class="bg-white p-6 rounded-lg shadow">
                 <h2 class="text-2xl font-bold mb-6">Configuración</h2>
                 
-                <div class="max-w-md">
-                    <label class="block font-semibold mb-2">Tipo de Fidelización</label>
-                    <select x-model="config.fidelization_type" class="w-full p-3 border rounded focus:ring-2 focus:ring-indigo-500">
-                        <option value="qr">QR (Recomendado)</option>
-                        <option value="dni">DNI del Cliente</option>
-                    </select>
-                    <p class="text-sm text-gray-600 mt-2">
-                        <span x-show="config.fidelization_type === 'qr'">Los clientes escanean un QR para obtener sellos</span>
-                        <span x-show="config.fidelization_type === 'dni'">Ingresas el DNI del cliente para asignar sellos</span>
-                    </p>
-                    <button @click="saveConfig" class="mt-6 bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 font-semibold">
-                        Guardar Configuración
+                <div class="max-w-md space-y-6">
+                    <!-- Tipo de Fidelización -->
+                    <div>
+                        <label class="block font-semibold mb-2">Tipo de Fidelización</label>
+                        <select x-model="config.fidelization_type" class="w-full p-3 border rounded focus:ring-2 focus:ring-indigo-500">
+                            <option value="qr">QR (Recomendado)</option>
+                            <option value="dni">DNI del Cliente</option>
+                        </select>
+                        <p class="text-sm text-gray-600 mt-2">
+                            <span x-show="config.fidelization_type === 'qr'">Los clientes escanean un QR para obtener sellos</span>
+                            <span x-show="config.fidelization_type === 'dni'">Ingresas el DNI del cliente para asignar sellos</span>
+                        </p>
+                    </div>
+
+                    <!-- Cantidad de Sellos -->
+                    <div>
+                        <label class="block font-semibold mb-2">Sellos Requeridos para Recompensa</label>
+                        <div class="flex gap-2">
+                            <input type="number" x-model.number="merchantMaxStamps" min="1" max="100" 
+                                class="flex-1 p-3 border rounded focus:ring-2 focus:ring-indigo-500">
+                            <button @click="updateMaxStamps" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 font-semibold">
+                                Guardar
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">
+                            ℹ️ Las nuevas tarjetas de clientes usarán esta configuración. <br>
+                            Las tarjetas existentes mantienen su valor actual.
+                        </p>
+                        <p x-text="maxStampsMessage" :class="maxStampsError ? 'text-red-600' : 'text-green-600'" 
+                            class="text-sm mt-2" x-show="maxStampsMessage"></p>
+                    </div>
+
+                    <!-- Botón General -->
+                    <button @click="saveConfig" class="w-full bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 font-semibold">
+                        💾 Guardar Configuración de Fidelización
                     </button>
                 </div>
             </div>
@@ -189,6 +263,19 @@
                 newReward: { name: '', description: '', stamps: 10 },
                 coupons: [],
                 config: { fidelization_type: 'qr' },
+                globalConfig: { max_stamps: 10 },
+                
+                // Para agregar sellos
+                showQrScanner: false,
+                qrScanSuccess: false,
+                qrMessage: '',
+                html5QrcodeScanner: null,
+                stampForm: { dni: '', message: '', error: false },
+
+                // Para la configuración de sellos
+                merchantMaxStamps: 10,
+                maxStampsMessage: '',
+                maxStampsError: false,
 
                 async init() {
                     if (!this.token || this.role !== 'merchant') {
@@ -202,6 +289,7 @@
                         await this.loadRewards();
                         await this.loadCoupons();
                         await this.loadConfig();
+                        await this.loadGlobalConfig();
                     } catch (e) {
                         alert("Error cargando datos");
                         console.error(e);
@@ -236,6 +324,27 @@
                         headers: { Authorization: `Bearer ${this.token}` }
                     });
                     this.config = res.data;
+                    
+                    // Cargar max_stamps actual
+                    try {
+                        const maxRes = await axios.get('/api/merchant/max-stamps', {
+                            headers: { Authorization: `Bearer ${this.token}` }
+                        });
+                        this.merchantMaxStamps = maxRes.data.max_stamps;
+                    } catch (e) {
+                        console.error("Error cargando max_stamps", e);
+                        this.merchantMaxStamps = 10;
+                    }
+                },
+
+                async loadGlobalConfig() {
+                    try {
+                        const res = await axios.get('/api/admin/config');
+                        this.globalConfig = res.data;
+                    } catch (e) {
+                        console.error("Error cargando config global", e);
+                        this.globalConfig = { max_stamps: 10 };
+                    }
                 },
 
                 async createReward() {
@@ -256,7 +365,7 @@
                         await this.loadRewards();
                         alert("Recompensa creada");
                     } catch (e) {
-                        alert("Error creando recompensa");
+                        alert("Error creando recompensa: " + (e.response?.data?.detail || e.message));
                     }
                 },
 
@@ -284,18 +393,117 @@
                     }
                 },
 
+                async updateMaxStamps() {
+                    if (this.merchantMaxStamps < 1 || this.merchantMaxStamps > 100) {
+                        this.maxStampsMessage = "Debe estar entre 1 y 100";
+                        this.maxStampsError = true;
+                        return;
+                    }
+                    
+                    try {
+                        const res = await axios.put('/api/merchant/max-stamps', 
+                            { max_stamps: this.merchantMaxStamps },
+                            { headers: { Authorization: `Bearer ${this.token}` } }
+                        );
+                        this.maxStampsMessage = "✓ " + res.data.message;
+                        this.maxStampsError = false;
+                    } catch (e) {
+                        this.maxStampsMessage = e.response?.data?.detail || "Error al guardar";
+                        this.maxStampsError = true;
+                    }
+                },
+
+                async addStampByDni() {
+                    if (!this.stampForm.dni.trim()) {
+                        this.stampForm.message = "DNI requerido";
+                        this.stampForm.error = true;
+                        return;
+                    }
+
+                    try {
+                        const res = await axios.post('/api/merchant/add-stamp-dni-dashboard', null, {
+                            params: { dni: this.stampForm.dni },
+                            headers: { Authorization: `Bearer ${this.token}` }
+                        });
+                        
+                        this.stampForm.message = `✓ Sello asignado. Total: ${res.data.new_total}`;
+                        this.stampForm.error = false;
+                        this.stampForm.dni = '';
+                        
+                        await this.loadDashboard();
+                    } catch (error) {
+                        this.stampForm.message = error.response?.data?.detail || "Error al agregar sello";
+                        this.stampForm.error = true;
+                    }
+                },
+
+                initQrScanner() {
+                    if (!this.showQrScanner) return;
+                    this.qrScanSuccess = false;
+                    
+                    setTimeout(() => {
+                        try {
+                            if (!document.getElementById('qr-reader')) return;
+                            
+                            if (this.html5QrcodeScanner) {
+                                try { this.html5QrcodeScanner.clear(); } catch (e) {}
+                            }
+
+                            if (typeof Html5QrcodeScanner === 'undefined') {
+                                alert("Error: Librería de cámara no cargó.");
+                                return;
+                            }
+                            
+                            this.html5QrcodeScanner = new Html5QrcodeScanner(
+                                "qr-reader", { fps: 10, qrbox: 250 });
+                            
+                            this.html5QrcodeScanner.render(this.onQrScanSuccess.bind(this), (err) => {
+                                // Ignorar errores de frame vacío
+                            });
+                        } catch (e) {
+                            console.error(e);
+                            alert("No se pudo iniciar la cámara.");
+                        }
+                    }, 100);
+                },
+
+                async onQrScanSuccess(decodedText, decodedResult) {
+                    if (this.html5QrcodeScanner) this.html5QrcodeScanner.pause();
+                    
+                    try {
+                        const response = await axios.post(`/api/merchant/scan?qr_token=${decodedText}`, {}, {
+                            headers: { Authorization: `Bearer ${this.token}` }
+                        });
+                        this.qrScanSuccess = true;
+                        this.qrMessage = `Sello asignado a: ${response.data.customer_email}. Total: ${response.data.new_total}`;
+                        
+                        await this.loadDashboard();
+                    } catch (error) {
+                        alert(error.response?.data?.detail || "Error al procesar QR");
+                        if (this.html5QrcodeScanner) this.html5QrcodeScanner.resume();
+                    }
+                },
+
+                resetQrScanner() {
+                    this.qrScanSuccess = false;
+                    this.qrMessage = '';
+                    if (this.html5QrcodeScanner) this.html5QrcodeScanner.resume();
+                },
+
                 logout() {
                     localStorage.removeItem('access_token');
                     localStorage.removeItem('user_role');
                     window.location.href = "/";
                 }
-            };
+            }
         }
 
+        // Inicializar Alpine cuando esté listo
         document.addEventListener('alpine:init', () => {
             Alpine.data('merchantApp', merchantApp);
         });
-        
+
+        // Ejecutar init cuando el DOM esté listo
         document.addEventListener('DOMContentLoaded', () => {
             const element = document.querySelector('[x-data]');
             if (element && element.__x) {
@@ -304,4 +512,5 @@
         });
     </script>
 </body>
+
 </html>
